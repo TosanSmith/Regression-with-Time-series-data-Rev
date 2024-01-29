@@ -1,0 +1,182 @@
+---
+title: "Lab 3- Regression with Time series data Rev"
+author: "Tosan Smith"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Set working directory 
+```{r}
+setwd("/Users/tosansmith/Downloads/Operations /Tosan's Personal Stuff/Forecasting for business ")
+```
+
+# Load packages 
+```{r warning=FALSE, message=FALSE}
+library("readxl")
+library("ggplot2")
+library("tidyverse")
+library("fpp2")
+```
+
+#Import dataset 
+```{r}
+data2 <- read_excel("Lab 3/income, Lab 3 copy.xls", col_names = TRUE)
+```
+
+#set time series from 1988Q1, quaterly 
+```{r}
+income <- ts(data2[[1]], frequency = 4, start=c(1988,1))
+```
+
+#plot the time series 
+```{r}
+ts.plot(income)
+```
+From the graph we can see there is a positive trend, there is also the presence of seasonality 
+
+# Regression with trend and seasonal dummies 
+
+Regression model of the form Y_t = B0 + B1t + B2S2 + B3S3 + B4S4 + e
+
+For now, we are going to start with the trend component by creating a frame that stores the result, so we called it "fit.inc"
+
+```{r}
+fit.inc <- tslm(income ~ trend)
+summary(fit.inc)
+```
+The trend coefficient is significiant at the 1%-level, indicating that the time series has a trebd component.
+
+
+we can check residuals and ACF 
+```{r}
+checkresiduals(fit.inc)
+```
+The ACF plots the autocorrelation at each lag. There are quite a few that are significant, indicating autocorrelation(or serial correlation). The BG test p-value from the console(below 0.05) suggest serial correlation as well, either ways, there is clearly a trend and the series if of course nonstationary.Now let's look at seasonality
+
+# Add Seasonal term(dummy variables)
+
+We can add a seasonal term to the regression. This just adds seasonal dummies for all except one season(this serves as a baseline)
+
+```{r}
+fit.inc2 <- tslm(income ~ trend + season)
+summary(fit.inc2)
+```
+The seasonal dummy coefficients are mostly significant, indicating that seasonality is present. 
+
+Lets plot the fitted values vs the actual data 
+
+```{r}
+autoplot(income, series = "Data") + 
+autolayer(fitted(fit.inc2), series="Fitted") +
+xlab("Quater") + ylab("Income") +
+  ggtitle("Quaterly Income SW Airlines")
+```
+The fitted data shows a very clear seasonal pattern, which the actual data does not always match. Perharps this is due to irregular or random variations despite seasonal patterns. It also seems like the variability of the seasonal effect increases over time. So we would check the residuals and ACF 
+
+```{r}
+checkresiduals(fit.inc2)
+```
+Serial correlation is clear from ACF and from the BG test P-value(see console). We could also check using the Durbin-Watson test. 
+
+```{r, warning=FALSE, message=FALSE}
+library(car)
+
+#perform Dubin-watson test 
+durbinWatsonTest(fit.inc2)
+```
+These results also indicate serial correlation(p-value below 0.05) 
+
+so basically we have a nonstationary series due to trend and seasonality, and we need to account for bothe. We can remove trebd by taking first differences 
+
+We take first differences to remove the trend component 
+
+```{r}
+#take the first difference 
+
+d_1 <- diff(income)
+ts.plot(d_1)
+```
+
+Not much of a time trend left in the series but there is still some fluctations 
+
+```{r}
+fit.inc3 <- tslm(d_1 ~ trend + season)
+summary(fit.inc3)
+```
+The trend coefficient is no longer significant but seasonality is still present 
+
+```{r}
+checkresiduals(fit.inc3)
+```
+
+You can see from the ACF that the seasonal time lags are still large and one is significant at lag=4. This is due to seasonality 
+
+# stationarity and differencing 
+
+This feeda into a wider discussuin on stationarity and differencing. A time series with a trend and/or seasonality(like the one above) is nonstationary. R has some tools to establish this and transform the series using differencing. 
+
+```{r}
+#original series 
+Box.test(income, lag=1, type="Ljung-Box")
+tseries::adf.test(income)
+```
+The LJung box test is basically a test for group leve;(overall) autocorrelation in our time series lags. If the p-value is over 0.05, the series has no autocorrelation. This one clearly doesz have. We cam also do the ADF test which shows the series is nonstationary, so we generate differenced versions. 
+
+Here is the situation: 
+
+- we have a trend, so we need to remove it by fir differencing 
+
+- We also have seasonality, so the first differenced series will not be stationary, we can remove seasonlity by differencing at the level of the seasonality(for quarterly data that is 4)
+```{r}
+income2 <- diff(income, differences = 1)#1st difference
+income3 <- diff(income, lag = 4)#difference to remove seasonality
+income4 <- diff(income3)# difference the last series to remove both
+```
+
+
+plot all of these 
+
+```{r}
+ts.plot(income)
+ts.plot(income2)
+ts.plot(income3)
+ts.plot(income4)
+```
+They look fairly random, but ket's do the time series regression again 
+
+```{r}
+fit.inc4 <- tslm(income4 ~ trend + season)
+summary(fit.inc4)
+```
+
+Nothing is significant any more 
+
+```{r}
+tseries::adf.test(income4)
+```
+ADF test p-value below 0.05 indicates stationarity. This does it. The differencing removed the trends and seasonality and the series is now stationary. 
+
+#Let's also check how we can do ACF and PACF plots in R 
+
+```{r}
+acf(income, lag.max = 16)
+acf(income2, lag.max = 16)
+acf(income3, lag.max = 16)
+acf(income4, lag.max = 16)
+```
+PACF Plots show partial autocorrelation at each time lag. basically the partial correlation between its series and its own time lags 
+
+```{r}
+pacf(income, lag.max = 16)
+pacf(income4, lag.max = 16)
+```
+
+
+
+
+
+
